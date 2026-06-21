@@ -518,3 +518,82 @@ def generate_credit_memo_pdf_full(
         'All data is synthetic. Not a binding decision. For educational purposes only.')
 
     return bytes(pdf.output())
+
+
+def generate_credit_memo_docx(
+    details, cs_scores, w_score, grade, verdict,
+    ml_pd, ml_confidence, stops, flags,
+    analyst_notes, pos_factors, neg_factors,
+    consensus_agree, consensus_explanation, grade_label='',
+) -> bytes:
+    """
+    Generates a professional Credit Committee Memorandum in DOCX format.
+    Returns DOCX content as bytes.
+    """
+    from docx import Document
+    from docx.shared import Pt, RGBColor, Inches
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    import io
+
+    doc = Document()
+    
+    # Setup styling
+    style = doc.styles['Normal']
+    font = style.font
+    font.name = 'Arial'
+    font.size = Pt(10)
+
+    # Header
+    today = datetime.date.today()
+    ref_id = f"CIQ-{today.strftime('%Y%m%d')}-{abs(hash(str(details))) % 9999:04d}"
+
+    header = doc.add_heading('CreditIQ', 0)
+    header.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    subheader = doc.add_paragraph('AI-Assisted Credit Risk Underwriting Platform')
+    subheader.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    doc.add_paragraph(f"Ref: {ref_id}  |  Generated: {datetime.datetime.now().strftime('%d %b %Y, %H:%M')}")
+    
+    doc.add_heading('1. EXECUTIVE SUMMARY', level=1)
+    p = doc.add_paragraph()
+    p.add_run(f"Applicant Category: {details.get('Category', 'N/A')}\n")
+    p.add_run(f"Loan Purpose: {details.get('Loan_Purpose', 'N/A')}\n")
+    p.add_run(f"Loan Amount: Rs. {details.get('Loan_Amount', 0):,.0f}\n")
+    p.add_run(f"Tenure: {details.get('Loan_Tenure', 0)} months\n")
+    p.add_run(f"Final Decision: {verdict}\n").bold = True
+    p.add_run(f"Risk Grade: {grade} ({grade_label})\n")
+    p.add_run(f"Probability of Default: {ml_pd*100:.1f}%\n")
+    
+    doc.add_heading('2. BORROWER PROFILE', level=1)
+    p = doc.add_paragraph()
+    p.add_run(f"Age: {details.get('Age', 0)}\n")
+    p.add_run(f"Monthly Income: Rs. {details.get('Monthly_Income', 0):,.0f}\n")
+    p.add_run(f"Existing EMIs: Rs. {details.get('Existing_EMIs', 0):,.0f}\n")
+    p.add_run(f"DTI Ratio: {details.get('DTI_Ratio', 0):.1f}%\n")
+    
+    doc.add_heading('3. 5 Cs SCORING', level=1)
+    p = doc.add_paragraph()
+    for c, score in cs_scores.items():
+        p.add_run(f"{c}: {score:.1f}/10\n")
+    p.add_run(f"Composite Score: {w_score:.1f}/100").bold = True
+    
+    doc.add_heading('4. RISK CONCERNS & STRENGTHS', level=1)
+    doc.add_heading('Key Strengths', level=2)
+    for s in pos_factors:
+        doc.add_paragraph(f"+ {s}", style='List Bullet')
+    doc.add_heading('Risk Concerns', level=2)
+    for r in neg_factors:
+        doc.add_paragraph(f"- {r}", style='List Bullet')
+        
+    doc.add_heading('5. ANALYST NOTES', level=1)
+    doc.add_paragraph(analyst_notes)
+    
+    doc.add_heading('6. FINAL RECOMMENDATION', level=1)
+    r = doc.add_paragraph()
+    r.add_run(verdict.upper()).bold = True
+    
+    doc.add_paragraph("\nDISCLAIMER: CreditIQ is an AI-assisted underwriting prototype. All data is synthetic.")
+
+    # Save to bytes stream
+    f = io.BytesIO()
+    doc.save(f)
+    return f.getvalue()

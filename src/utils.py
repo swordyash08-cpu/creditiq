@@ -234,6 +234,201 @@ def inject_custom_css():
         margin-top: 4px;
     }
 
+    /* ── Chat Interface ── */
+    .chat-container {
+        max-height: 520px;
+        overflow-y: auto;
+        padding: 12px 4px;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(99,102,241,0.25) transparent;
+    }
+    .chat-container::-webkit-scrollbar { width: 5px; }
+    .chat-container::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.25); border-radius: 4px; }
+    .chat-user {
+        background: rgba(99,102,241,0.15);
+        border: 1px solid rgba(99,102,241,0.30);
+        border-radius: 14px 14px 4px 14px;
+        padding: 12px 16px;
+        margin: 8px 0 8px 40px;
+        color: #e2e8f0;
+        font-size: 0.90rem;
+        line-height: 1.6;
+    }
+    .chat-assistant {
+        background: rgba(11,18,36,0.85);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 14px 14px 14px 4px;
+        padding: 14px 18px;
+        margin: 8px 40px 8px 0;
+        color: #cbd5e1;
+        font-size: 0.90rem;
+        line-height: 1.7;
+    }
+    .chat-quick-btn {
+        display: inline-block;
+        background: rgba(99,102,241,0.10);
+        border: 1px solid rgba(99,102,241,0.25);
+        border-radius: 20px;
+        padding: 6px 14px;
+        color: #a5b4fc;
+        font-size: 0.78rem;
+        cursor: pointer;
+        transition: all 0.2s;
+        margin: 3px;
+    }
+    .chat-quick-btn:hover {
+        background: rgba(99,102,241,0.25);
+        border-color: rgba(99,102,241,0.50);
+    }
+
+    /* ── Upload Wizard ── */
+    .upload-zone {
+        background: rgba(99,102,241,0.06);
+        border: 2px dashed rgba(99,102,241,0.30);
+        border-radius: 16px;
+        padding: 40px 24px;
+        text-align: center;
+        transition: all 0.3s;
+    }
+    .upload-zone:hover {
+        border-color: rgba(99,102,241,0.60);
+        background: rgba(99,102,241,0.10);
+    }
+    .upload-step {
+        background: rgba(11,18,36,0.70);
+        border: 1px solid rgba(255,255,255,0.07);
+        border-radius: 12px;
+        padding: 16px 20px;
+        margin-bottom: 12px;
+    }
+    .upload-step-active {
+        border-color: rgba(99,102,241,0.40);
+        background: rgba(99,102,241,0.08);
+    }
+    .upload-step-done {
+        border-color: rgba(16,185,129,0.30);
+        background: rgba(16,185,129,0.06);
+    }
+    .quality-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+    }
+
+    /* ── Search Panel ── */
+    .search-result-card {
+        background: rgba(11,18,36,0.70);
+        border: 1px solid rgba(255,255,255,0.06);
+        border-radius: 12px;
+        padding: 14px 18px;
+        margin-bottom: 10px;
+        transition: border-color 0.2s;
+        cursor: pointer;
+    }
+    .search-result-card:hover {
+        border-color: rgba(99,102,241,0.30);
+    }
+    .filter-chip {
+        display: inline-block;
+        background: rgba(99,102,241,0.12);
+        border: 1px solid rgba(99,102,241,0.25);
+        border-radius: 6px;
+        padding: 4px 10px;
+        font-size: 0.75rem;
+        color: #a5b4fc;
+        margin: 2px;
+    }
+
+    /* ── Policy Editor ── */
+    .policy-card {
+        background: rgba(11,18,36,0.75);
+        border: 1px solid rgba(255,255,255,0.07);
+        border-radius: 14px;
+        padding: 18px 22px;
+        margin-bottom: 14px;
+        transition: border-color 0.2s;
+    }
+    .policy-card:hover {
+        border-color: rgba(99,102,241,0.25);
+    }
+    .policy-changed {
+        border-color: rgba(245,158,11,0.50) !important;
+        background: rgba(245,158,11,0.06) !important;
+    }
+
+    /* ── Scenario Cards ── */
+    .scenario-card {
+        background: rgba(11,18,36,0.75);
+        border: 1px solid rgba(255,255,255,0.07);
+        border-radius: 14px;
+        padding: 20px;
+        text-align: center;
+        transition: all 0.25s;
+        position: relative;
+        overflow: hidden;
+    }
+    .scenario-card:hover {
+        transform: translateY(-3px);
+        border-color: rgba(99,102,241,0.30);
+        box-shadow: 0 8px 32px rgba(99,102,241,0.15);
+    }
+    .scenario-severity-moderate {
+        border-left: 4px solid #f59e0b;
+    }
+    .scenario-severity-severe {
+        border-left: 4px solid #ef4444;
+    }
+    .scenario-severity-critical {
+        border-left: 4px solid #dc2626;
+    }
+    .impact-delta-positive {
+        color: #ef4444;
+        font-weight: 800;
+    }
+    .impact-delta-negative {
+        color: #10b981;
+        font-weight: 800;
+    }
+
+    /* ── Animations ── */
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(8px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50%      { opacity: 0.5; }
+    }
+    .typing-indicator {
+        display: inline-flex;
+        gap: 4px;
+        padding: 8px 14px;
+    }
+    .typing-indicator span {
+        width: 6px; height: 6px;
+        border-radius: 50%;
+        background: #6366f1;
+        animation: pulse 1.2s infinite;
+    }
+    .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+    .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.20); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(99,102,241,0.40); }
+
+    /* ── Dataframe styling ── */
+    .stDataFrame { border-radius: 12px; overflow: hidden; }
+
+    /* ── Chat input override ── */
+    .stChatInput > div { border-color: rgba(99,102,241,0.30) !important; }
+    .stChatInput > div:focus-within { border-color: rgba(99,102,241,0.60) !important; }
+
     </style>
     """
     st.markdown(css, unsafe_allow_html=True)

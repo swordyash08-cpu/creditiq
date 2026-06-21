@@ -898,6 +898,106 @@ def find_fastest_approval_path(model_data, details, current_score, current_pd, c
     return sorted(paths, key=lambda x: x['priority'])[:3], target_grade
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# SECTION 4 — UNIFIED APPLICATION PROCESSING PIPELINE
+# ══════════════════════════════════════════════════════════════════════════════
+
+def process_single_application(details, model_data):
+    """
+    Full underwriting pipeline for a single application.
+    Takes a raw borrower dict + trained model, returns comprehensive result dict.
+    Used by: upload engine, individual assessment, AI assistant lookups.
+    """
+    from utils import calculate_emi
+
+    # Ensure derived features
+    income = details.get('Monthly_Income', 0)
+    if 'Loan_To_Income_Ratio' not in details or details['Loan_To_Income_Ratio'] is None:
+        details['Loan_To_Income_Ratio'] = (
+            details.get('Loan_Amount', 0) / (income * 12) if income > 0 else 5.0
+        )
+    if 'Net_Worth' not in details or details['Net_Worth'] is None:
+        details['Net_Worth'] = (
+            details.get('Savings', 0) + details.get('Investments', 0) +
+            details.get('Asset_Value', 0) - details.get('Loan_Amount', 0)
+        )
+    if 'Existing_EMIs' not in details:
+        details['Existing_EMIs'] = 0
+    if 'DTI_Ratio' not in details or details['DTI_Ratio'] is None:
+        if income > 0:
+            details['DTI_Ratio'] = round((details.get('Existing_EMIs', 0) / income) * 100, 1)
+        else:
+            details['DTI_Ratio'] = 0.0
+
+    # 5 Cs Scoring
+    cs = calculate_5cs_scores(details)
+    w_score = calculate_weighted_score(cs)
+    grade = get_risk_grade(w_score)
+    g_label = get_risk_grade_label(grade)
+
+    # Policy checks
+    stops = check_hard_stops(details)
+    flags, fc = check_red_flags(details)
+    verdict, risk_cat, detail_msg = get_rule_based_decision(w_score, stops, fc)
+
+    # ML prediction
+    ml_pd = predict_single_probability(model_data, details)
+    ml_conf = get_confidence_score(model_data, details)
+
+    # Consensus
+    agree, consensus_exp, final_verdict, decision_source = get_model_consensus(
+        verdict, ml_pd, w_score
+    )
+
+    # Generate explanation
+    explanation = detail_msg
+    if stops:
+        explanation = f"REJECTED — {stops[0]}"
+    elif not agree:
+        explanation = f"{final_verdict}: {consensus_exp[:120]}"
+
+    return {
+        'cs': cs,
+        'w_score': w_score,
+        'grade': grade,
+        'g_label': g_label,
+        'stops': stops,
+        'flags': flags,
+        'fc': fc,
+        'verdict': verdict,
+        'risk_cat': risk_cat,
+        'detail_msg': detail_msg,
+        'ml_pd': ml_pd,
+        'ml_conf': ml_conf,
+        'agree': agree,
+        'consensus_exp': consensus_exp,
+        'final_verdict': final_verdict,
+        'decision_source': decision_source,
+        'explanation': explanation,
+    }
+
+
+def process_batch_applications(app_list, model_data):
+    """
+    Process a list of application dicts through the full underwriting pipeline.
+    Returns list of result dicts (one per application).
+    """
+    results = []
+    for details in app_list:
+        try:
+            result = process_single_application(details.copy(), model_data)
+            result['details'] = details
+            results.append(result)
+        except Exception as e:
+            results.append({
+                'details': details,
+                'final_verdict': 'Error',
+                'explanation': str(e),
+                'w_score': 0, 'ml_pd': 0, 'grade': 'D',
+            })
+    return results
+
+
 if __name__ == '__main__':
     csv_path   = os.path.join(BASE_DIR, 'data', 'borrowers.csv')
     model_path = os.path.join(BASE_DIR, 'models', 'risk_model.pkl')
@@ -905,4 +1005,5 @@ if __name__ == '__main__':
         train_ml_model(csv_path, model_path)
     else:
         print("Run generator.py first.")
+
 

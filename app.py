@@ -23,6 +23,12 @@ from utils import (
 )
 from memo import generate_credit_memo_pdf_full
 
+# New modules for V2.0
+import database as db
+import ai_assistant
+import upload_engine
+import scenario_engine
+
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="CreditIQ — AI Underwriting Platform",
@@ -39,6 +45,8 @@ if 'audit_log' not in st.session_state:
     st.session_state['audit_log'] = []
 if 'assessment_count' not in st.session_state:
     st.session_state['assessment_count'] = 0
+if 'chat_messages' not in st.session_state:
+    st.session_state['chat_messages'] = db.get_chat_history(limit=20)
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
@@ -46,24 +54,29 @@ DATA_PATH  = os.path.join(BASE_DIR, 'data',   'borrowers.csv')
 MODEL_PATH = os.path.join(BASE_DIR, 'models', 'risk_model.pkl')
 
 
-@st.cache_resource(show_spinner="🔄 Initialising AI Risk Engine…")
+@st.cache_resource(show_spinner="🔄 Initialising AI Risk Engine & Database…")
 def load_resources():
+    db.init_database()
+    db.init_default_policies()
     if not os.path.exists(DATA_PATH):
         generate_borrower_dataset()
     if not os.path.exists(MODEL_PATH):
         train_ml_model(DATA_PATH, MODEL_PATH)
     with open(MODEL_PATH, 'rb') as f:
         md = pickle.load(f)
-    df = pd.read_csv(DATA_PATH)
-    return df, md
+    # Seed database with CSV data on first run
+    db.seed_from_csv(DATA_PATH, md)
+    return md
 
 try:
-    df, model_data = load_resources()
+    model_data = load_resources()
+    df = db.get_portfolio_df()
 except Exception as e:
     st.error(f"Init error: {e}")
     generate_borrower_dataset()
     train_ml_model(DATA_PATH, MODEL_PATH)
-    df, model_data = load_resources()
+    model_data = load_resources()
+    df = db.get_portfolio_df()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -85,8 +98,13 @@ with st.sidebar:
         "nav", label_visibility="hidden",
         options=[
             "📊  Portfolio Dashboard",
+            "🤖  AI Credit Assistant",
+            "📤  Bulk Upload Engine",
             "🛡️  Credit Assessment",
+            "🔍  Portfolio Search",
+            "📜  Credit Policy Engine",
             "🎛️  What-If Simulator",
+            "🌊  Scenario Analysis",
             "⚖️  Model Governance",
             "🎓  Knowledge Base & Data",
             "📄  Credit Memo Generator",
@@ -318,6 +336,148 @@ if "Dashboard" in page:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# PAGE — AI CREDIT ASSISTANT
+# ══════════════════════════════════════════════════════════════════════════════
+elif "AI Credit Assistant" in page:
+    st.markdown("# 🤖 AI Credit Assistant")
+    st.markdown("<div style='color:#64748b;margin-bottom:22px;'>Intelligent NLP engine acting as your autonomous Credit Risk Officer</div>", unsafe_allow_html=True)
+
+    # Quick action buttons
+    st.markdown("<div style='margin-bottom: 12px;'>", unsafe_allow_html=True)
+    quick_queries = [
+        "What is the overall approval rate?",
+        "How many high risk borrowers exist?",
+        "Show applicants with PD above 20%",
+        "Why was APP-00001 rejected?",
+        "Explain Probability of Default (PD)",
+    ]
+    for q in quick_queries:
+        if st.button(q, key=f"btn_{q}"):
+            # Add to chat history
+            st.session_state['chat_messages'].append({'role': 'user', 'content': q})
+            db.log_chat('user', q)
+            # Process query
+            with st.spinner("🤖 Thinking..."):
+                response = ai_assistant.process_query(q)
+                st.session_state['chat_messages'].append({'role': 'assistant', 'content': response})
+                db.log_chat('assistant', response)
+            st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # Chat interface container
+    st.markdown("<div class='chat-container'>", unsafe_allow_html=True)
+    for msg in st.session_state['chat_messages']:
+        if msg['role'] == 'user':
+            st.markdown(f"<div class='chat-user'>🧑‍💼 <b>You</b><br>{msg['content']}</div>", unsafe_allow_html=True)
+        else:
+            st.markdown(f"<div class='chat-assistant'>🤖 <b>CreditIQ AI</b><br>{msg['content']}</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # Chat input
+    user_input = st.chat_input("Ask about portfolio metrics, risk segments, specific applicants (e.g. APP-00001), or credit policies...")
+    if user_input:
+        st.session_state['chat_messages'].append({'role': 'user', 'content': user_input})
+        db.log_chat('user', user_input)
+        response = ai_assistant.process_query(user_input)
+        st.session_state['chat_messages'].append({'role': 'assistant', 'content': response})
+        db.log_chat('assistant', response)
+        st.rerun()
+
+    if st.button("🗑️ Clear Chat History"):
+        db.clear_chat_history()
+        st.session_state['chat_messages'] = []
+        st.rerun()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE — BULK UPLOAD ENGINE
+# ══════════════════════════════════════════════════════════════════════════════
+elif "Upload" in page:
+    st.markdown("# 📤 Bulk Upload Engine")
+    st.markdown("<div style='color:#64748b;margin-bottom:22px;'>Upload and process multiple loan applications simultaneously through the AI underwriting pipeline</div>", unsafe_allow_html=True)
+
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        st.markdown("""
+        <div class='upload-zone'>
+            <div style='font-size:3rem;margin-bottom:10px;'>📄</div>
+            <h3 style='margin:0;'>Drag and drop CSV or Excel file</h3>
+            <p style='color:#94a3b8;font-size:0.9rem;'>Max 500 records per batch for performance</p>
+        </div>
+        """, unsafe_allow_html=True)
+        uploaded_file = st.file_uploader("", type=['csv', 'xlsx'], label_visibility="collapsed")
+    with col2:
+        st.markdown("<div class='card' style='height: 100%;'>", unsafe_allow_html=True)
+        st.markdown("#### 📋 Required Fields")
+        st.markdown("""
+        <ul style='color:#94a3b8;font-size:0.85rem;line-height:1.6;'>
+            <li>Applicant_ID</li>
+            <li>Age, Category</li>
+            <li>Income, Savings, Existing_EMIs</li>
+            <li>CIBIL_Score, Missed_EMIs</li>
+            <li>Loan_Amount, Loan_Tenure</li>
+        </ul>
+        """, unsafe_allow_html=True)
+        if st.download_button("⬇️ Download Template", data=upload_engine.generate_template_csv(), file_name="CreditIQ_Template.csv", mime="text/csv"):
+            pass
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    if uploaded_file:
+        try:
+            if uploaded_file.name.endswith('.csv'):
+                upload_df = pd.read_csv(uploaded_file)
+            else:
+                upload_df = pd.read_excel(uploaded_file)
+
+            # Step 1: Validate
+            st.markdown("### Step 1: Validation")
+            val_results = upload_engine.validate_upload(upload_df)
+
+            vcol1, vcol2, vcol3, vcol4 = st.columns(4)
+            vcol1.metric("Total Records", val_results['total_records'])
+            vcol2.metric("Valid Records", val_results['total_records'] - len(val_results['invalid_rows']))
+            vcol3.metric("Invalid Records", len(val_results['invalid_rows']))
+            vcol4.metric("Data Quality Score", f"{val_results['quality_score']:.1f}%")
+
+            if not val_results['valid']:
+                st.error("Validation failed! Please fix the errors below and re-upload.")
+                st.write("**Missing Required Fields:**", ", ".join(val_results['missing_fields']))
+                if val_results['invalid_rows']:
+                    st.dataframe(pd.DataFrame(val_results['invalid_rows']))
+            else:
+                st.success("Validation passed!")
+                if val_results['warnings']:
+                    for w in val_results['warnings']:
+                        st.warning(w)
+
+                # Step 2: Process
+                st.markdown("### Step 2: Processing")
+                if st.button("▶️ Process Batch", type="primary"):
+                    with st.spinner(f"Processing {len(val_results['cleaned_df'])} applications..."):
+                        batch_id = f"BATCH-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+                        proc_results = upload_engine.process_upload(val_results['cleaned_df'], model_data, batch_id)
+
+                        st.success(f"Processed {proc_results['processed']} applications!")
+                        pcol1, pcol2, pcol3, pcol4 = st.columns(4)
+                        pcol1.metric("Approved", proc_results['accepted'])
+                        pcol2.metric("Conditional", proc_results['conditional'])
+                        pcol3.metric("Manual Review", proc_results['manual_review'])
+                        pcol4.metric("Rejected", proc_results['rejected'])
+
+                        st.info("The portfolio has been updated. Go to the Dashboard to see the impact.")
+
+        except Exception as e:
+            st.error(f"Error reading file: {e}")
+
+    # History
+    st.markdown("---")
+    st.markdown("#### 🕒 Upload History")
+    history_df = db.get_upload_history()
+    if not history_df.empty:
+        st.dataframe(history_df, use_container_width=True)
+    else:
+        st.info("No upload history found.")
+# ══════════════════════════════════════════════════════════════════════════════
 # PAGE 2 — CREDIT ASSESSMENT
 # ══════════════════════════════════════════════════════════════════════════════
 elif "Assessment" in page:
@@ -439,6 +599,17 @@ elif "Assessment" in page:
             'tenure': tenure, 'cat': cat, 'timestamp': _ts,
         }
         st.session_state['assessment_count'] += 1
+
+        # ── Insert into database ──────────────────────────────────────────────
+        app_id = f"APP-{st.session_state['assessment_count']:03d}"
+        db_record = bd.copy()
+        db_record['Applicant_ID'] = app_id
+        db_record['Risk_Score'] = w_score
+        db_record['Risk_Grade'] = grade
+        db_record['PD_Value'] = ml_pd
+        db_record['Decision'] = final_verdict
+        db.insert_applications_batch([db_record])
+        st.toast(f"✅ Application {app_id} saved to portfolio database.")
         # ── Append to audit log ────────────────────────────────────────────────
         st.session_state['audit_log'].append({
             'Event #': st.session_state['assessment_count'],
@@ -865,6 +1036,107 @@ elif "Assessment" in page:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# PAGE — PORTFOLIO SEARCH ENGINE
+# ══════════════════════════════════════════════════════════════════════════════
+elif "Search" in page:
+    st.markdown("# 🔍 Portfolio Search Engine")
+    st.markdown("<div style='color:#64748b;margin-bottom:22px;'>Advanced querying and filtering across the entire loan portfolio</div>", unsafe_allow_html=True)
+
+    with st.expander("🔎 Advanced Filters", expanded=True):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            f_id = st.text_input("Applicant ID (e.g. SYN-01007)")
+            f_cat = st.selectbox("Borrower Category", ["All", "Salaried", "Self-Employed", "Student", "Retired"])
+        with col2:
+            f_grades = st.multiselect("Risk Grades", ["A+", "A", "B+", "B", "C", "D"])
+            f_decisions = st.multiselect("Underwriting Decision", ["Approved", "Approved with Conditions", "Manual Review", "Rejected"])
+        with col3:
+            f_pd_min, f_pd_max = st.slider("Probability of Default (%)", 0.0, 100.0, (0.0, 100.0))
+            f_limit = st.selectbox("Max Results", [100, 500, 1000, 5000])
+
+        if st.button("Apply Filters", type="primary"):
+            filters = {}
+            if f_id: filters['applicant_id'] = f_id
+            if f_cat != "All": filters['category'] = f_cat
+            if f_grades: filters['risk_grade'] = f_grades
+            if f_decisions: filters['decision'] = f_decisions
+            if f_pd_min > 0: filters['min_pd'] = f_pd_min / 100.0
+            if f_pd_max < 100: filters['max_pd'] = f_pd_max / 100.0
+            filters['limit'] = f_limit
+
+            st.session_state['search_filters'] = filters
+
+    filters = st.session_state.get('search_filters', {})
+    results_df = db.search_applications(filters)
+
+    st.markdown(f"#### 📊 Search Results ({len(results_df)})")
+    if not results_df.empty:
+        st.dataframe(results_df, use_container_width=True)
+        csv = results_df.to_csv(index=False).encode('utf-8')
+        st.download_button("⬇️ Export Results", data=csv, file_name="CreditIQ_Search.csv", mime="text/csv")
+    else:
+        st.info("No records found matching your filters.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE — CREDIT POLICY ENGINE
+# ══════════════════════════════════════════════════════════════════════════════
+elif "Policy" in page:
+    st.markdown("# 📜 Credit Policy Engine")
+    st.markdown("<div style='color:#64748b;margin-bottom:22px;'>Manage global underwriting thresholds and auto-recalculate portfolio</div>", unsafe_allow_html=True)
+
+    policies = db.get_policies()
+
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        st.markdown("### 🎛️ Policy Parameters")
+
+        # Create edit form
+        new_vals = {}
+        st.markdown("#### Hard Stops")
+        pc1, pc2 = st.columns(2)
+        with pc1:
+            new_vals['min_cibil_score'] = st.number_input("Minimum CIBIL Score", value=int(policies['min_cibil_score']['value']), step=10)
+            new_vals['max_dti_ratio'] = st.number_input("Maximum DTI Ratio (%)", value=float(policies['max_dti_ratio']['value']), step=5.0)
+        with pc2:
+            new_vals['min_monthly_income'] = st.number_input("Minimum Monthly Income (₹)", value=int(policies['min_monthly_income']['value']), step=5000)
+            new_vals['max_missed_emis'] = st.number_input("Maximum Missed EMIs", value=int(policies['max_missed_emis']['value']), step=1)
+
+        st.markdown("#### Scoring Thresholds")
+        sc1, sc2, sc3 = st.columns(3)
+        with sc1:
+            new_vals['score_approve'] = st.number_input("Auto-Approve Score", value=int(policies['score_approve']['value']), step=1)
+        with sc2:
+            new_vals['score_conditional'] = st.number_input("Conditional Score", value=int(policies['score_conditional']['value']), step=1)
+        with sc3:
+            new_vals['score_manual'] = st.number_input("Manual Review Score", value=int(policies['score_manual']['value']), step=1)
+
+        if st.button("💾 Save & Recalculate Portfolio", type="primary"):
+            with st.spinner("Updating policies and recalculating portfolio..."):
+                for k, v in new_vals.items():
+                    if v != policies[k]['value']:
+                        db.update_policy(k, v)
+
+                # Fetch all apps and re-run (simplified for performance)
+                # In a real app this would trigger an async batch job
+                st.success("Policies updated successfully! (Note: Portfolio recalculation is simulated in this prototype)")
+                st.rerun()
+
+        if st.button("🔄 Reset to Defaults"):
+            db.reset_policies()
+            st.rerun()
+
+    with col2:
+        st.markdown("### 📊 Policy Impact")
+        st.markdown("<div class='card'>", unsafe_allow_html=True)
+        stats = db.get_portfolio_stats()
+        st.metric("Total Portfolio Size", stats['total'])
+        st.metric("Current Approval Rate", f"{stats['approval_rate']:.1f}%")
+        st.metric("Average Risk Score", f"{stats['avg_risk_score']:.1f}")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # PAGE 3 — WHAT-IF SIMULATOR (UPGRADED)
 # ══════════════════════════════════════════════════════════════════════════════
 elif "Simulator" in page:
@@ -1042,6 +1314,42 @@ elif "Simulator" in page:
         for sug in suggestions:
             st.markdown(f"<div class='suggestion-item'>{sug}</div>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PAGE — SCENARIO ANALYSIS
+# ══════════════════════════════════════════════════════════════════════════════
+elif "Scenario" in page:
+    st.markdown("# 🌊 Macro-Economic Scenario Analysis")
+    st.markdown("<div style='color:#64748b;margin-bottom:22px;'>Portfolio-level stress testing across 5 adverse economic scenarios</div>", unsafe_allow_html=True)
+
+    scenarios = scenario_engine.get_scenario_names()
+    selected_scenario = st.selectbox("Select Stress Scenario to Run", ["All Scenarios"] + scenarios)
+
+    if st.button("▶️ Run Stress Test", type="primary"):
+        with st.spinner("Applying macroeconomic shocks to portfolio and recalculating risk..."):
+            port_df = db.get_portfolio_df()
+            if port_df.empty:
+                st.error("Portfolio is empty. Please generate data or upload applications first.")
+            else:
+                s_name = 'all' if selected_scenario == "All Scenarios" else selected_scenario
+                results = scenario_engine.run_portfolio_stress_test(port_df, model_data, s_name)
+
+                st.success(f"Stress test completed on sample of {min(1000, len(port_df))} applications.")
+
+                for res in results:
+                    st.markdown(f"### {res['icon']} {res['scenario']}")
+                    st.markdown(f"<p style='color:#94a3b8;font-size:0.9rem;'>{res['description']}</p>", unsafe_allow_html=True)
+
+                    c1, c2, c3, c4 = st.columns(4)
+                    c1.metric("Average PD", f"{res['stressed_avg_pd']*100:.1f}%", f"{res['pd_change']*100:.1f}%", delta_color="inverse")
+                    c2.metric("Approval Rate", f"{res['stressed_approval_rate']:.1f}%", f"{res['approval_change']:.1f}%")
+                    c3.metric("Average Score", f"{res['stressed_avg_score']:.1f}", f"{res['score_change']:.1f}")
+                    
+                    sev_color = "red" if res['severity'] == "Critical" else "orange" if res['severity'] == "Severe" else "yellow"
+                    c4.markdown(f"<div style='padding:10px;border-radius:10px;text-align:center;border:1px solid {sev_color};color:{sev_color}'><b>Severity: {res['severity']}</b><br>+{res['high_risk_increase']:.1f}% High Risk</div>", unsafe_allow_html=True)
+                    
+                    st.markdown("---")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1535,7 +1843,7 @@ elif "Memo" in page:
 
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("#### ⬇️ Download Credit Committee Memorandum")
-        st.markdown("<div style='color:#64748b;font-size:0.85rem;margin-bottom:14px;'>Professional one-page PDF memo — formatted for Credit Committee review and portfolio presentations.</div>", unsafe_allow_html=True)
+        st.markdown("<div style='color:#64748b;font-size:0.85rem;margin-bottom:14px;'>Professional one-page PDF memo or Word document — formatted for Credit Committee review and portfolio presentations.</div>", unsafe_allow_html=True)
 
         try:
             pdf_bytes = generate_credit_memo_pdf_full(
@@ -1546,18 +1854,39 @@ elif "Memo" in page:
                 consensus_agree=agree, consensus_explanation=consensus_exp,
                 grade_label=g_label, audit_rows=audit_rows,
             )
-            fname = f"CreditIQ_Memo_{cat}_{datetime.date.today()}.pdf"
-            dl_col, _ = st.columns([1, 2])
-            with dl_col:
+            
+            from memo import generate_credit_memo_docx
+            docx_bytes = generate_credit_memo_docx(
+                details=bd, cs_scores=cs, w_score=w_score, grade=grade,
+                verdict=final_verdict, ml_pd=ml_pd, ml_confidence=ml_conf,
+                stops=stops, flags=flags, analyst_notes=analyst_note,
+                pos_factors=pos_factors, neg_factors=neg_factors,
+                consensus_agree=agree, consensus_explanation=consensus_exp,
+                grade_label=g_label,
+            )
+            
+            fname_pdf = f"CreditIQ_Memo_{cat}_{datetime.date.today()}.pdf"
+            fname_docx = f"CreditIQ_Memo_{cat}_{datetime.date.today()}.docx"
+            
+            dl_col1, dl_col2, _ = st.columns([1, 1, 1])
+            with dl_col1:
                 st.download_button(
-                    label="📄  Download Credit Committee Memo (PDF)",
+                    label="📄 Download PDF Memo",
                     data=pdf_bytes,
-                    file_name=fname,
+                    file_name=fname_pdf,
                     mime="application/pdf",
-                    use_container_width=True,
+                    use_container_width=True
                 )
-        except Exception as pdf_err:
-            st.warning(f"PDF generation error: {pdf_err}. Ensure fpdf2 is installed.")
+            with dl_col2:
+                st.download_button(
+                    label="📝 Download Word Document",
+                    data=docx_bytes,
+                    file_name=fname_docx,
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True
+                )
+        except Exception as e:
+            st.error(f"Error generating memo: {e}")
 
         # ── Risk Factor Summary ────────────────────────────────────────────────
         if pos_factors or neg_factors:

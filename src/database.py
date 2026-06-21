@@ -316,10 +316,41 @@ def get_application(applicant_id):
 
 
 def get_portfolio_df():
-    """Returns the full portfolio as a pandas DataFrame."""
+    """Returns the full portfolio as a pandas DataFrame with original CamelCase column names."""
     conn = _get_conn()
     df = pd.read_sql_query("SELECT * FROM applications ORDER BY id", conn)
     conn.close()
+    
+    # Map back to CamelCase for model.py compatibility
+    col_map = {
+        'applicant_id': 'Applicant_ID',
+        'category': 'Category',
+        'age': 'Age',
+        'monthly_income': 'Monthly_Income',
+        'savings': 'Savings',
+        'investments': 'Investments',
+        'cibil_score': 'CIBIL_Score',
+        'missed_emis': 'Missed_EMIs',
+        'credit_history_length': 'Credit_History_Length',
+        'existing_emis': 'Existing_EMIs',
+        'dti_ratio': 'DTI_Ratio',
+        'employment_length': 'Employment_Length',
+        'asset_value': 'Asset_Value',
+        'loan_amount': 'Loan_Amount',
+        'loan_tenure': 'Loan_Tenure',
+        'loan_purpose': 'Loan_Purpose',
+        'co_applicant': 'Co_Applicant',
+        'loan_to_income_ratio': 'Loan_To_Income_Ratio',
+        'net_worth': 'Net_Worth',
+        'risk_score': 'Risk_Score',
+        'pd_value': 'PD_Value',
+        'risk_grade': 'Risk_Grade',
+        'decision': 'Decision',
+        'decision_explanation': 'Decision_Explanation',
+        'source': 'Source',
+        'upload_batch_id': 'Upload_Batch_ID',
+    }
+    df.rename(columns=col_map, inplace=True)
     return df
 
 

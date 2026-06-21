@@ -182,31 +182,16 @@ if "Dashboard" in page:
              "A portfolio dashboard gives a bird's-eye view of all loans in a bank's book. "
              "Risk managers use it to monitor approval rates, default trends, and concentration risk across segments.")
 
-    @st.cache_data
-    def portfolio_stats(_df, sample=1000):
-        approvals, scores, grades = [], [], []
-        for _, row in _df.sample(min(sample, len(_df)), random_state=1).iterrows():
-            d = row.to_dict()
-            if 'Loan_To_Income_Ratio' not in d:
-                inc = d.get('Monthly_Income', 1)
-                d['Loan_To_Income_Ratio'] = d.get('Loan_Amount', 0) / (inc * 12) if inc > 0 else 5
-            cs = calculate_5cs_scores(d)
-            sc = calculate_weighted_score(cs)
-            stops = check_hard_stops(d)
-            _, fc = check_red_flags(d)
-            verdict, _, _ = get_rule_based_decision(sc, stops, fc)
-            approvals.append(verdict)
-            scores.append(sc)
-            grades.append(get_risk_grade(sc))
-        a = pd.Series(approvals)
-        app_rate = (a.isin(['Approved', 'Approved with Conditions']).sum() / len(a)) * 100
-        return app_rate, np.mean(scores), pd.Series(grades).value_counts()
-
-    app_rate, avg_score, grade_dist = portfolio_stats(df)
-    def_rate = df['Default'].mean() * 100
-    total_aum = df['Loan_Amount'].sum()
-    avg_cibil = df['CIBIL_Score'].mean()
-    avg_dti   = df['DTI_Ratio'].mean()
+    db_stats = db.get_portfolio_stats()
+    
+    app_rate = db_stats['approval_rate']
+    avg_score = db_stats['avg_risk_score']
+    grade_dist = pd.Series(db_stats.get('grade_dist', {}))
+    
+    def_rate = db_stats['avg_pd'] * 100
+    total_aum = db_stats['total_aum']
+    avg_cibil = db_stats['avg_cibil']
+    avg_dti   = db_stats['avg_dti']
     cond_rate = 8.4  # synthetic conditional approval rate estimate
     npa_est   = def_rate * 0.72  # estimate NPA from defaults
     coverage_ratio = 142.5  # synthetic PCR

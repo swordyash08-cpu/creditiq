@@ -4,7 +4,7 @@ import os
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-def generate_borrower_dataset(num_records=8000, seed=42):
+def generate_borrower_dataset(num_records=3000, seed=42):
     """
     Generates a realistic synthetic dataset for credit risk assessment
     aligned with Indian retail lending contexts.

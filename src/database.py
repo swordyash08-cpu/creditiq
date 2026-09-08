@@ -124,6 +124,31 @@ def seed_from_csv(csv_path, model_data=None):
         get_model_consensus,
     )
 
+    # Batch predict ML PD probabilities if model_data is present
+    pd_vals = [0.0] * len(df)
+    if model_data and 'model' in model_data:
+        try:
+            from model import CATEGORY_MAP, PURPOSE_MAP
+            rf = model_data['model']
+            feat = model_data['features']
+            df_feat = df.copy()
+            df_feat['Category'] = df_feat['Category'].map(lambda x: CATEGORY_MAP.get(x, 1))
+            df_feat['Loan_Purpose'] = df_feat['Loan_Purpose'].map(lambda x: PURPOSE_MAP.get(x, 1))
+            if 'Loan_To_Income_Ratio' not in df_feat.columns:
+                df_feat['Loan_To_Income_Ratio'] = df_feat.apply(
+                    lambda r: r['Loan_Amount'] / (r['Monthly_Income'] * 12) if r.get('Monthly_Income', 0) > 0 else 5.0, axis=1
+                )
+            if 'Net_Worth' not in df_feat.columns:
+                df_feat['Net_Worth'] = (df_feat.get('Savings', 0) + df_feat.get('Investments', 0) +
+                                    df_feat.get('Asset_Value', 0) - df_feat.get('Loan_Amount', 0))
+            for f in feat:
+                if f not in df_feat.columns:
+                    df_feat[f] = 0
+            X_batch = df_feat[feat].fillna(0)
+            pd_vals = [round(float(p), 4) for p in rf.predict_proba(X_batch)[:, 1]]
+        except Exception:
+            pd_vals = [0.0] * len(df)
+
     records = []
     for idx, row in df.iterrows():
         d = row.to_dict()
@@ -144,10 +169,9 @@ def seed_from_csv(csv_path, model_data=None):
         _, fc = check_red_flags(d)
         verdict, risk_cat, detail_msg = get_rule_based_decision(w_score, stops, fc)
 
-        pd_val = 0.0
-        if model_data:
+        pd_val = pd_vals[idx] if idx < len(pd_vals) else 0.0
+        if model_data and pd_val > 0:
             try:
-                pd_val = predict_single_probability(model_data, d)
                 _, _, final_verdict, _ = get_model_consensus(verdict, pd_val, w_score)
                 verdict = final_verdict
             except Exception:
